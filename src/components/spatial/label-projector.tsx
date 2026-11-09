@@ -5,7 +5,6 @@ import * as THREE from "three";
 import type { SpatialBus } from "./bus";
 
 const v = new THREE.Vector3();
-const toCam = new THREE.Vector3();
 const EDGE = 12;
 
 interface Placed {
@@ -18,28 +17,40 @@ interface Placed {
 
 /**
  * Pins the accessible HTML labels (real buttons) to their 3D anchors each
- * frame. Labels stay crisp DOM text at a fixed size; position, depth order and
- * a "seen from behind" dimming come from the scene. Labels whose anchor is off
- * screen are clamped to the edge (an indicator pointing the way), and object
- * labels are nudged apart so they never overlap on narrow screens.
+ * frame. Labels stay crisp DOM text; position and depth order come from the
+ * scene.
+ *
+ * Tracked anchors (the glass tiles) follow a moving object and receive its
+ * on-screen size as `--size`, so the button covers the tile exactly. Other
+ * labels are clamped to the viewport and nudged apart so they never overlap.
  */
 export function LabelProjector({ bus }: { bus: SpatialBus }) {
   useFrame((state) => {
-    const cam = state.camera;
+    const cam = state.camera as THREE.PerspectiveCamera;
     const { width, height } = state.size;
+    const tan = Math.tan(((cam.fov / 2) * Math.PI) / 180);
     const items: Placed[] = [];
 
     for (const anchor of bus.anchors.values()) {
       const el = anchor.el;
       if (!el.hasAttribute("data-shown")) continue;
-      v.set(...anchor.position);
-      toCam.copy(cam.position).sub(v);
-      const dist = toCam.length();
+      const tracked = anchor.track ? bus.tracked.get(anchor.track) : undefined;
+      v.set(...(tracked ? tracked.position : anchor.position));
+      const dist = v.distanceTo(cam.position);
       v.project(cam);
-      const w = el.offsetWidth;
-      const h = el.offsetHeight;
       let x = (v.x * 0.5 + 0.5) * width;
       let y = (-v.y * 0.5 + 0.5) * height;
+      el.style.zIndex = String(Math.round(1000 - dist * 20));
+
+      if (tracked) {
+        const px = (tracked.size * height) / (2 * dist * tan);
+        el.style.setProperty("--size", `${px.toFixed(1)}px`);
+        el.style.transform = `translate3d(${x.toFixed(1)}px, ${y.toFixed(1)}px, 0) translate(-50%, -50%)`;
+        continue;
+      }
+
+      const w = el.offsetWidth;
+      const h = el.offsetHeight;
       if (v.z > 1) {
         // Behind the camera: mirror to the nearest edge.
         x = width - x;
@@ -48,17 +59,7 @@ export function LabelProjector({ bus }: { bus: SpatialBus }) {
       const cx = Math.min(width - EDGE - w / 2, Math.max(EDGE + w / 2, x));
       const cy = Math.min(height - EDGE - h / 2, Math.max(76 + h / 2, y));
       el.dataset.edge = cx !== x || cy !== y || v.z > 1 ? "true" : "false";
-      x = cx;
-      y = cy;
-
-      let facing = 1;
-      if (anchor.normal) {
-        const n = anchor.normal;
-        facing = (toCam.x * n[0] + toCam.y * n[1] + toCam.z * n[2]) / Math.max(dist, 1e-6);
-      }
-      el.dataset.far = facing < -0.2 ? "true" : "false";
-      el.style.zIndex = String(Math.round(1000 - dist * 20));
-      items.push({ el, x, y, w, h });
+      items.push({ el, x: cx, y: cy, w, h });
     }
 
     // Resolve overlaps: push later labels down below earlier ones.

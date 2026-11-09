@@ -25,7 +25,7 @@ const art: { palette: ScreenPalette; layout: ScreenLayout; scale: number; rotY: 
 
 export function ProjectsDestination(props: DestinationProps) {
   return (
-    <Destination id="projects" {...props} pedestal={{ width: 1.9, depth: 0.32, top: -0.48, z: -0.02 }}>
+    <Destination id="projects" {...props}>
       {(kit) => <Gallery kit={kit} {...props} />}
     </Destination>
   );

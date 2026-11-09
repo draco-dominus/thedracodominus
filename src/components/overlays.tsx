@@ -14,70 +14,53 @@ import { Icon, type IconName } from "./icons";
 
 const philosophyIcons: IconName[] = ["cube", "code", "layers"];
 
-/** OVERVIEW: a concise introduction over the scene. */
+/** OVERVIEW: the editorial introduction, left of the composition. */
 export function IntroOverlay({ shown }: { shown: boolean }) {
+  // Break the headline where the approved design does ("The future feels /
+  // futuristic until it exists."); narrow screens wrap naturally.
+  const words = hero.headlineLead.split(" ");
+  const lineOne = words.slice(0, 3).join(" ");
+  const lineTwo = words.slice(3).join(" ");
   return (
-    <>
-    {/* Paper-toned veil keeps the copy legible when objects pass behind it. */}
-    <div aria-hidden="true" className="intro-veil" data-shown={shown || undefined} />
     <section
       aria-labelledby="hero-heading"
       className="intro-overlay"
       data-shown={shown || undefined}
       inert={!shown}
     >
-      <p className="eyebrow flex items-center gap-4">
+      <p className="eyebrow flex items-center gap-5">
         {hero.eyebrow}
-        <span aria-hidden="true" className="hidden h-px w-10 bg-ink/40 sm:block" />
+        <span aria-hidden="true" className="hidden h-px w-12 bg-ink/50 sm:block" />
       </p>
-      <h1
-        id="hero-heading"
-        tabIndex={-1}
-        className="mt-4 text-[clamp(2rem,3.4vw,3.4rem)] leading-[1.03] font-medium tracking-[-0.035em] text-ink outline-none"
-      >
-        {hero.headlineLead} <em className="accent-word">{hero.headlineAccent}</em>
+      <h1 id="hero-heading" tabIndex={-1} className="hero-headline">
+        <span className="lg:block">{lineOne}</span>{" "}
+        <span className="lg:block">
+          {lineTwo} <span className="accent-word">{hero.headlineAccent}</span>
+        </span>
       </h1>
-      <p className="mt-4 text-[clamp(1.05rem,1.3vw,1.25rem)] tracking-[-0.01em] text-ink-muted">
-        {hero.subheading}
-      </p>
-      <p className="mt-3 hidden max-w-[25rem] text-[15px] leading-relaxed text-ink-muted sm:block">
-        {hero.description}
-      </p>
-      <ol aria-label="Philosophy" className="philosophy mt-5 hidden flex-wrap items-center text-[14px] text-ink sm:flex">
+      <p className="hero-sub">{hero.subheading}</p>
+      <p className="hero-description">{hero.description}</p>
+      <ul aria-label="Philosophy" className="philosophy">
         {hero.philosophy.map((step, i) => (
-          <li key={step} className="flex items-center gap-2">
-            <Icon name={philosophyIcons[i]} size={16} className="text-ink-muted" />
+          <li key={step}>
+            <Icon name={philosophyIcons[i]} size={20} className="text-ink-muted" />
             {step}
           </li>
         ))}
-      </ol>
-      <div className="mt-6 flex flex-wrap items-center gap-3">
-        <a
-          href="#projects"
-          onClick={(e) => {
-            if (e.metaKey || e.ctrlKey || e.shiftKey) return;
-            e.preventDefault();
-            openArea("projects");
-          }}
-          className="btn-dark h-12 px-6 text-[15px]"
-        >
-          {hero.cta}
-          <Icon name="arrow-right" size={17} />
-        </a>
-      </div>
+      </ul>
+      <a
+        href="#projects"
+        onClick={(e) => {
+          if (e.metaKey || e.ctrlKey || e.shiftKey) return;
+          e.preventDefault();
+          openArea("projects");
+        }}
+        className="btn-dark hero-cta"
+      >
+        {hero.cta}
+        <Icon name="arrow-right" size={18} />
+      </a>
     </section>
-    </>
-  );
-}
-
-/** OVERVIEW: how to move around, shown only once the 3D world is live. */
-export function OrbitHint({ shown }: { shown: boolean }) {
-  return (
-    <p className="orbit-hint" data-shown={shown || undefined} aria-hidden={!shown}>
-      <Icon name="pointer-drag" size={15} />
-      <span className="hidden sm:inline">Drag to look around · Scroll to zoom · Select a destination</span>
-      <span className="sm:hidden">Drag to look around · Tap a destination</span>
-    </p>
   );
 }
 

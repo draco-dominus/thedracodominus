@@ -39,7 +39,7 @@ const layouts: [number, number][][] = [
 
 export function EngineeringDestination(props: DestinationProps) {
   return (
-    <Destination id="engineering" {...props} pedestal={{ width: 0.86, depth: 0.62, top: -0.505 }}>
+    <Destination id="engineering" {...props}>
       {(kit) => <SystemStack kit={kit} {...props} />}
     </Destination>
   );

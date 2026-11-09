@@ -9,7 +9,7 @@ import {
   useNavState,
 } from "@/lib/focus-store";
 import { useWideLayout } from "@/lib/hooks";
-import { InspectCard, IntroOverlay, OrbitHint, Wayfinding } from "./overlays";
+import { InspectCard, IntroOverlay, Wayfinding } from "./overlays";
 import { SiteHeader } from "./site-header";
 import { SpatialStage } from "./spatial/spatial-stage";
 
@@ -17,8 +17,8 @@ import { SpatialStage } from "./spatial/spatial-stage";
  * The homepage is one spatial interface. A single route (mirrored in the URL
  * hash) drives the camera, the 3D world and the HTML layers:
  *
- *   overview -> intro + orbit hint + destination labels
- *   focus    -> breadcrumb + destination intro + object labels
+ *   overview -> editorial intro + the glass tiles (portrait composition)
+ *   focus    -> breadcrumb + area intro + object labels (exhibit forward)
  *   inspect  -> breadcrumb + inspect card beside the framed object
  */
 export function HomeExperience() {
@@ -84,7 +84,6 @@ export function HomeExperience() {
         </div>
         <div inert={sheetOpen}>
           <IntroOverlay shown={mode === "overview"} />
-          <OrbitHint shown={mode === "overview" && live} />
           <Wayfinding route={route} live={live} />
         </div>
         {inspecting && (

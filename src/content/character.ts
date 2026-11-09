@@ -1,21 +1,19 @@
 /**
- * The 3D character representing the portfolio owner.
+ * The 3D model of the portfolio owner, shown in the homepage composition.
  *
- * STATUS: NO CHARACTER IN THE COMPOSITION. `model` is null and `placeholder`
- * is "none", so the centre of the stage stays empty (a quiet marked slot).
- * The procedural stand-in in `components/spatial/character/procedural-character.tsx`
- * is kept only for development (`placeholder: "procedural"`); it is not a
- * likeness and must not ship.
+ * STATUS: TEMPORARY PORTRAIT. `model` is null, so the composition uses the
+ * real photograph as a layered, depth-displaced portrait
+ * (`components/spatial/hero-portrait.tsx`). That is a photo with soft relief,
+ * not a 3D reconstruction. (The approved mockup's figure was AI-generated and
+ * is used only as a target for pose, framing and prominence.)
  *
- * PRODUCTION: commission or capture a proper stylised model, export as GLB
- * (Y-up, metres, facing +Z, feet/seat on y = 0), drop it in /public/models and
- * set `model` below. The loader normalises its height and grounds it.
+ * PRODUCTION: provide a high-quality GLB (Y-up, metres, facing +Z, seat on
+ * y = 0), drop it in /public/models and set `model` below. It replaces the
+ * portrait in the same slot; the loader normalises its height and grounds it.
  */
 export const character = {
   model: null as string | null,
-  /** What to show when no model is set. */
-  placeholder: "none" as "none" | "procedural",
   /** Target height in metres for a loaded model (seated figure ≈ 1.62). */
   height: 1.62,
-  status: "awaiting-model" as "awaiting-model" | "production",
+  status: "temporary-portrait" as "temporary-portrait" | "production",
 };

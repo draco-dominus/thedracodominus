@@ -2,51 +2,141 @@ import type { AreaId } from "@/content/areas";
 import type { Route } from "@/lib/focus-store";
 
 /**
- * The spatial layout of the world, in metres. Pure math, no three.js, so the
- * DOM layer can import it without pulling WebGL code into the main bundle.
+ * The spatial layout, in metres. Pure math, no three.js, so the DOM layer can
+ * import it without pulling WebGL code into the main bundle.
  *
- * The character sits at the origin facing +Z. Each destination stands on a
- * ring around them and faces outward, so arriving at a destination means the
- * camera has travelled around the character, who remains in the background.
+ * OVERVIEW is the approved homepage composition: the portrait on the right,
+ * four glass tiles floating around it at different depths, a ribbon passing
+ * through. It is authored in fractions of a reference viewport (the mockup),
+ * then converted to world space, so the 3D scene reproduces the design.
+ *
+ * FOCUS / INSPECT bring one area's exhibit forward onto a stage in front of
+ * the portrait, which recedes behind it.
  */
 export type Vec3 = [number, number, number];
 
 export const FOV = 34;
-/** Uniform scale of every destination group (objects are modelled at 1:1). */
+/** Uniform scale of every exhibit group (objects are modelled at 1:1). */
 export const DEST_SCALE = 0.8;
 const TAN = Math.tan(((FOV / 2) * Math.PI) / 180);
 
+/* ---------------------------- Hero composition ---------------------------- */
+
+export type LayoutKind = "wide" | "narrow";
+
+/** Reference viewports the composition was designed in (camera on +Z, level). */
+const REFERENCE: Record<LayoutKind, { aspect: number; dist: number }> = {
+  // The approved desktop mockup (1672 x 941).
+  wide: { aspect: 1672 / 941, dist: 6 },
+  // A typical phone (390 x 844): copy above, composition below.
+  narrow: { aspect: 390 / 844, dist: 9.6 },
+};
+
+/** World position that appears at (fx, fy) of the reference viewport, at depth z. */
+function onScreen(kind: LayoutKind, fx: number, fy: number, z: number): Vec3 {
+  const f = REFERENCE[kind];
+  const h = 2 * f.dist * TAN;
+  const w = h * f.aspect;
+  const k = (f.dist - z) / f.dist;
+  return [(fx - 0.5) * w * k, (0.5 - fy) * h * k, z];
+}
+
+export interface RibbonShape {
+  rx: number;
+  rz: number;
+  center: Vec3;
+  tilt: Vec3;
+  width: number;
+}
+
+export interface TileSpec {
+  position: Vec3;
+  rotation: Vec3;
+}
+
+export interface HeroLayout {
+  /** Centre and height of the portrait plane. */
+  portrait: { position: Vec3; height: number };
+  tiles: Record<AreaId, TileSpec>;
+  ribbon: RibbonShape;
+  /** Region of the reference viewport the composition occupies (fractions, y down). */
+  rect: { x0: number; x1: number; y0: number; y1: number };
+}
+
+/** Edge length of a navigation tile (world units). */
+export const TILE_SIZE = 0.6;
+export const PORTRAIT_HEIGHT = 3.45;
+
+export const heroLayouts: Record<LayoutKind, HeroLayout> = {
+  wide: {
+    portrait: { position: onScreen("wide", 0.575, 0.525, 0), height: PORTRAIT_HEIGHT },
+    tiles: {
+      engineering: { position: onScreen("wide", 0.465, 0.372, -0.35), rotation: [0.05, 0.3, -0.05] },
+      projects: { position: onScreen("wide", 0.363, 0.592, 0.35), rotation: [0.08, 0.34, 0.06] },
+      design: { position: onScreen("wide", 0.81, 0.271, -0.1), rotation: [0.1, -0.3, -0.07] },
+      about: { position: onScreen("wide", 0.85, 0.54, 0.15), rotation: [-0.04, -0.34, 0.04] },
+    },
+    ribbon: {
+      rx: 2.05,
+      rz: 1.1,
+      center: onScreen("wide", 0.625, 0.43, 0),
+      tilt: [0.45, 0.28, 0.33],
+      width: 0.2,
+    },
+    rect: { x0: 0.31, x1: 0.93, y0: 0.04, y1: 0.96 },
+  },
+  narrow: {
+    portrait: { position: onScreen("narrow", 0.56, 0.72, 0), height: 2.9 },
+    tiles: {
+      engineering: { position: onScreen("narrow", 0.15, 0.5, -0.3), rotation: [0.05, 0.3, -0.05] },
+      projects: { position: onScreen("narrow", 0.15, 0.79, 0.35), rotation: [0.08, 0.34, 0.06] },
+      design: { position: onScreen("narrow", 0.87, 0.47, -0.1), rotation: [0.1, -0.3, -0.07] },
+      about: { position: onScreen("narrow", 0.87, 0.74, 0.15), rotation: [-0.04, -0.34, 0.04] },
+    },
+    ribbon: {
+      rx: 1.3,
+      rz: 0.75,
+      center: onScreen("narrow", 0.56, 0.67, 0),
+      tilt: [0.45, 0.28, 0.33],
+      width: 0.14,
+    },
+    rect: { x0: 0.02, x1: 0.98, y0: 0.43, y1: 1.0 },
+  },
+};
+
+/* ------------------------------ Exhibits ---------------------------------- */
+
 export interface ItemPlacement {
-  /** Local position inside the destination group (+Z faces outward). */
+  /** Local position inside the exhibit group (+Z faces the viewer). */
   position: Vec3;
   /** Radius to frame when inspecting. */
   extent: number;
-  /** Camera direction offsets relative to the destination's facing. */
+  /** Camera direction offsets relative to the exhibit's facing. */
   view: { az: number; pol: number };
   /** Where its label sits relative to `position`. */
   labelOffset: Vec3;
 }
 
 export interface DestinationPlacement {
-  /** Angle around the character, radians from +Z toward +X. */
-  angle: number;
-  radius: number;
-  height: number;
   extent: number;
+  /** Viewing direction in focus; the exhibit turns to face it. */
   view: { az: number; pol: number };
-  labelOffset: Vec3;
+  /** Local y of the soft shadow beneath the exhibit. */
+  floor: number;
   items: Record<string, ItemPlacement>;
 }
 
+/**
+ * Where a focused exhibit comes to rest: in front of the portrait (which
+ * recedes behind it), between the composition and the viewer.
+ */
+export const STAGE: Vec3 = [0.55, 0.1, 1.5];
+
 export const destinations: Record<AreaId, DestinationPlacement> = {
-  // Front centre: the primary destination, nearest the overview camera.
   projects: {
-    angle: 0.0,
-    radius: 2.3,
-    height: 0.95,
     extent: 1.25,
-    view: { az: 0.22, pol: 1.45 },
-    labelOffset: [0, 0.58, 0],
+    view: { az: 0.18, pol: 1.47 },
+    floor: -0.5,
     items: {
       "example-project": {
         position: [0, 0.02, 0.12],
@@ -68,15 +158,10 @@ export const destinations: Record<AreaId, DestinationPlacement> = {
       },
     },
   },
-  // Front right: floating compositions (the one exhibit without a pedestal).
   design: {
-    angle: 0.9,
-    radius: 2.3,
-    height: 1.0,
     extent: 0.95,
-    view: { az: -0.35, pol: 1.45 },
-    // Below the floating exhibit, so it never lands on the exhibit behind.
-    labelOffset: [0.05, -0.68, 0.25],
+    view: { az: -0.3, pol: 1.47 },
+    floor: -0.66,
     items: {
       "interface-studies": {
         position: [-0.36, 0.04, 0],
@@ -92,14 +177,10 @@ export const destinations: Record<AreaId, DestinationPlacement> = {
       },
     },
   },
-  // Back left, facing inward: its focus camera looks outward across an empty room.
   engineering: {
-    angle: -1.8,
-    radius: 2.3,
-    height: 0.95,
     extent: 0.95,
-    view: { az: Math.PI + 0.38, pol: 1.2 },
-    labelOffset: [0, 0.78, 0],
+    view: { az: 0.34, pol: 1.25 },
+    floor: -0.56,
     items: {
       architecture: {
         position: [0.06, 0.44, 0.02],
@@ -121,14 +202,10 @@ export const destinations: Record<AreaId, DestinationPlacement> = {
       },
     },
   },
-  // Back right, facing inward.
   about: {
-    angle: 2.2,
-    radius: 2.3,
-    height: 0.95,
     extent: 0.95,
-    view: { az: Math.PI - 0.3, pol: 1.42 },
-    labelOffset: [0, 0.62, 0],
+    view: { az: -0.26, pol: 1.42 },
+    floor: -0.56,
     items: {
       background: {
         position: [-0.44, 0.08, -0.04],
@@ -158,25 +235,22 @@ export const destinations: Record<AreaId, DestinationPlacement> = {
   },
 };
 
-/** Rotate a local vector into the destination's world frame (rotation about Y). */
+/** Rotate a local vector about Y. */
 function rotY(v: Vec3, a: number): Vec3 {
   const c = Math.cos(a);
   const s = Math.sin(a);
   return [v[0] * c + v[2] * s, v[1], -v[0] * s + v[2] * c];
 }
 
+/** Every exhibit comes forward to the same stage; only one is present at a time. */
 export function destinationCenter(id: AreaId): Vec3 {
-  const d = destinations[id];
-  return [Math.sin(d.angle) * d.radius, d.height, Math.cos(d.angle) * d.radius];
+  void id;
+  return STAGE;
 }
 
-/**
- * Each destination is turned to face its own designed viewpoint, so its
- * objects spread across the frame instead of stacking in depth.
- */
+/** Each exhibit turns to face its own focus viewpoint. */
 export function destinationYaw(id: AreaId) {
-  const d = destinations[id];
-  return d.angle + d.view.az;
+  return destinations[id].view.az;
 }
 
 export function localToWorld(id: AreaId, local: Vec3): Vec3 {
@@ -191,10 +265,6 @@ export function itemCenter(area: AreaId, item: string): Vec3 | null {
   return p ? localToWorld(area, p.position) : null;
 }
 
-export function destinationLabelPosition(id: AreaId): Vec3 {
-  return localToWorld(id, destinations[id].labelOffset);
-}
-
 export function itemLabelPosition(area: AreaId, item: string): Vec3 | null {
   const p = destinations[area].items[item];
   if (!p) return null;
@@ -204,18 +274,14 @@ export function itemLabelPosition(area: AreaId, item: string): Vec3 | null {
 
 /* ------------------------------ Camera poses ------------------------------ */
 
-/** Overview pivot: the centre of the stage (and of the future character slot). */
-export const CHARACTER_TARGET: Vec3 = [0, 0.6, 0];
-
 export const ORBIT = {
-  defaultAz: 0.3,
-  defaultPol: 1.15,
-  defaultDist: 8.0,
-  minPol: 0.95,
-  maxPol: 1.45,
-  minDist: 5,
-  maxDist: 11,
-  /** Look-around allowance once arrived at a destination / object. */
+  /** Overview: drag shifts perspective within these bounds, then settles back. */
+  heroAz: 0.32,
+  heroPol: 0.14,
+  /** Pointer parallax amplitude (radians) in the overview. */
+  parallaxAz: 0.05,
+  parallaxPol: 0.025,
+  /** Look-around allowance once arrived at an exhibit / object. */
   focusAz: 0.5,
   focusPol: 0.16,
   inspectAz: 0.38,
@@ -233,12 +299,16 @@ export interface CameraPose {
 }
 
 export interface OrbitInput {
-  az: number;
-  pol: number;
-  dist: number;
-  /** User offsets while at a destination / inspecting. */
+  /** User offsets from the designed viewpoint (drag / arrow keys). */
   dAz: number;
   dPol: number;
+}
+
+export interface Viewport {
+  aspect: number;
+  wide: boolean;
+  /** Narrow layout: bottom of the intro copy, as a fraction of viewport height. */
+  introBottom: number;
 }
 
 /** Distance at which a sphere of radius `r` fills the given fraction of the view. */
@@ -247,20 +317,44 @@ function fitDistance(r: number, aspect: number, fill: number) {
   return r / (t * fill);
 }
 
-export function poseFor(route: Route, orbit: OrbitInput, aspect: number, wide: boolean): CameraPose {
-  if (!route.area) {
-    // Narrow screens need extra distance to keep the composition in frame.
-    const narrow = aspect < 1 ? 1 + (1 - aspect) * 1.3 : 1;
-    return {
-      target: CHARACTER_TARGET,
-      az: orbit.az,
-      pol: orbit.pol,
-      dist: orbit.dist * narrow,
-      shiftX: wide ? 0.14 : 0,
-      // Mobile: lift the scene above the intro card.
-      shiftY: wide ? 0 : 0.14,
-    };
-  }
+/**
+ * The overview camera reproduces the reference composition: the region the
+ * composition occupies in the mockup is fitted into the matching region of
+ * the actual viewport (narrowing it where the copy needs room).
+ */
+function overviewPose(orbit: OrbitInput, vp: Viewport): CameraPose {
+  const kind: LayoutKind = vp.wide ? "wide" : "narrow";
+  const ref = REFERENCE[kind];
+  const r = heroLayouts[kind].rect;
+  const H = 2 * ref.dist * TAN;
+  const W = H * ref.aspect;
+  const bw = (r.x1 - r.x0) * W;
+  const bh = (r.y1 - r.y0) * H;
+  const bx = ((r.x0 + r.x1) / 2 - 0.5) * W;
+  const by = (0.5 - (r.y0 + r.y1) / 2) * H;
+
+  const t = { ...r };
+  // Narrower desktop windows: keep the composition clear of the headline.
+  if (vp.wide && vp.aspect < 1.6) t.x0 = Math.min(0.43, r.x0 + (1.6 - vp.aspect) * 0.42);
+  // Phones: the composition starts below the intro copy.
+  if (!vp.wide && vp.introBottom > 0) t.y0 = Math.min(0.6, Math.max(0.3, vp.introBottom + 0.015));
+  const tw = t.x1 - t.x0;
+  const th = t.y1 - t.y0;
+  const dist = Math.max(bh / (2 * TAN * th), bw / (2 * TAN * vp.aspect * tw));
+
+  return {
+    target: [bx, by, 0],
+    az: orbit.dAz,
+    pol: Math.PI / 2 - 0.015 + orbit.dPol,
+    dist,
+    shiftX: (t.x0 + t.x1) / 2 - 0.5,
+    shiftY: 0.5 - (t.y0 + t.y1) / 2,
+  };
+}
+
+export function poseFor(route: Route, orbit: OrbitInput, vp: Viewport): CameraPose {
+  const { aspect, wide } = vp;
+  if (!route.area) return overviewPose(orbit, vp);
   const d = destinations[route.area];
   const p = route.item ? d.items[route.item] : undefined;
   if (p) {
@@ -276,9 +370,9 @@ export function poseFor(route: Route, orbit: OrbitInput, aspect: number, wide: b
   }
   return {
     target: destinationCenter(route.area),
-    az: d.angle + d.view.az + orbit.dAz,
+    az: d.view.az + orbit.dAz,
     pol: d.view.pol + orbit.dPol,
-    // Desktop: the destination owns the right two thirds; wayfinding sits left.
+    // Desktop: the exhibit owns the right two thirds; wayfinding sits left.
     dist: fitDistance(d.extent * DEST_SCALE, wide ? aspect * 0.66 : aspect, wide ? 0.86 : 0.9),
     shiftX: wide ? 0.15 : 0,
     shiftY: wide ? -0.02 : -0.06,

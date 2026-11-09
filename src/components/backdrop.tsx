@@ -1,13 +1,13 @@
-/** Decorative environment: warm paper, soft light, faint architectural arcs. */
+/** Decorative environment: warm paper, a soft pool of light behind the portrait, faint arcs. */
 export function Backdrop() {
   return (
     <div aria-hidden="true" className="pointer-events-none fixed inset-0 -z-10 overflow-hidden bg-paper">
-      {/* Soft pool of light behind the stage; the room falls off to warm stone. */}
-      <div className="absolute inset-0 bg-[radial-gradient(55%_60%_at_64%_52%,rgb(247_244_250/0.95),transparent_72%)]" />
-      <div className="absolute inset-0 bg-[radial-gradient(40%_50%_at_6%_15%,rgb(244_232_224/0.7),transparent_70%)]" />
-      <div className="absolute inset-0 bg-[radial-gradient(120%_70%_at_50%_120%,rgb(214_208_200/0.55),transparent_70%)]" />
+      {/* Soft light behind the portrait; the edges fall off to warm blush. */}
+      <div className="absolute inset-0 bg-[radial-gradient(50%_62%_at_62%_42%,rgb(250_247_247/0.9),transparent_75%)]" />
+      <div className="absolute inset-0 bg-[radial-gradient(38%_48%_at_4%_6%,rgb(251_244_242/0.85),transparent_70%)]" />
+      <div className="absolute inset-0 bg-[radial-gradient(90%_60%_at_80%_110%,rgb(236_226_226/0.6),transparent_70%)]" />
       <svg
-        className="absolute inset-0 h-full w-full opacity-70"
+        className="absolute inset-0 h-full w-full opacity-50"
         viewBox="0 0 1600 1000"
         preserveAspectRatio="xMidYMid slice"
         fill="none"

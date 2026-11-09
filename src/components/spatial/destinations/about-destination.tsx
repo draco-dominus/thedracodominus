@@ -21,7 +21,7 @@ const TABLE_TOP = -0.32;
 
 export function AboutDestination(props: DestinationProps) {
   return (
-    <Destination id="about" {...props} pedestal={{ width: 1.4, depth: 0.44, top: -0.495 }}>
+    <Destination id="about" {...props}>
       {(kit) => <StillLife kit={kit} {...props} />}
     </Destination>
   );

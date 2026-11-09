@@ -10,19 +10,26 @@ import { useReducedMotion, useWideLayout } from "@/lib/hooks";
 import { Icon } from "../icons";
 import { Boundary } from "./boundary";
 import { createSpatialBus } from "./bus";
-import { destinationLabelPosition, destinationYaw, itemLabelPosition, ORBIT } from "./world";
+import { heroLayouts, itemLabelPosition, ORBIT, type Vec3 } from "./world";
 import { useWebGLSupport } from "./webgl-support";
 
 const SpatialScene = dynamic(() => import("./spatial-scene"), { ssr: false });
 
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
 
+function limits(mode: ReturnType<typeof cameraStateOf>) {
+  if (mode === "overview") return { az: ORBIT.heroAz, pol: ORBIT.heroPol };
+  if (mode === "focus") return { az: ORBIT.focusAz, pol: ORBIT.focusPol };
+  return { az: ORBIT.inspectAz, pol: ORBIT.inspectPol };
+}
+
 /**
  * The full-viewport spatial layer.
  *
- * Owns input (drag-to-orbit with momentum, wheel zoom, arrow keys), the
- * accessible label buttons pinned to 3D anchors, and progressive loading:
- * the WebGL world is lazy-loaded; without WebGL a static fallback is shown.
+ * Owns input (pointer parallax, bounded drag with momentum, arrow keys), the
+ * accessible buttons pinned to 3D objects (the glass tiles and exhibit
+ * objects), and progressive loading: the WebGL world is lazy-loaded; without
+ * WebGL the same composition is drawn with HTML and CSS.
  */
 export function SpatialStage({
   route,
@@ -52,44 +59,70 @@ export function SpatialStage({
     return () => document.removeEventListener("visibilitychange", onVis);
   }, []);
 
-  // Wheel zoom in overview (canvas only; cards and panels scroll normally).
+  // Pointer position drives parallax and the tiles' lean.
   useEffect(() => {
-    const root = rootRef.current;
-    if (!root || !live) return;
-    const onWheel = (e: WheelEvent) => {
-      if (!(e.target instanceof HTMLCanvasElement) || mode !== "overview") return;
-      e.preventDefault();
-      bus.orbit.dist = clamp(bus.orbit.dist * Math.exp(e.deltaY * 0.0012), ORBIT.minDist, ORBIT.maxDist);
+    if (!live) return;
+    const onMove = (e: PointerEvent) => {
+      if (e.pointerType === "touch") return;
+      bus.pointer.x = (e.clientX / window.innerWidth) * 2 - 1;
+      bus.pointer.y = 1 - (e.clientY / window.innerHeight) * 2;
       bus.invalidate();
     };
-    root.addEventListener("wheel", onWheel, { passive: false });
-    return () => root.removeEventListener("wheel", onWheel);
-  }, [bus, live, mode]);
+    const onLeave = () => {
+      bus.pointer.x = 0;
+      bus.pointer.y = 0;
+      bus.invalidate();
+    };
+    window.addEventListener("pointermove", onMove);
+    document.documentElement.addEventListener("pointerleave", onLeave);
+    return () => {
+      window.removeEventListener("pointermove", onMove);
+      document.documentElement.removeEventListener("pointerleave", onLeave);
+    };
+  }, [bus, live]);
 
-  // Arrow keys look around when focus is on the page itself or the stage.
+  // Phones: the composition starts where the intro copy ends.
+  useEffect(() => {
+    const intro = document.querySelector<HTMLElement>(".intro-overlay");
+    if (!intro) return;
+    const measure = () => {
+      bus.introBottom = wide ? 0 : (intro.offsetTop + intro.offsetHeight) / window.innerHeight;
+      bus.invalidate();
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(intro);
+    window.addEventListener("resize", measure);
+    return () => {
+      ro.disconnect();
+      window.removeEventListener("resize", measure);
+    };
+  }, [bus, wide]);
+
+  // Arrow keys shift perspective when focus is on the page itself or the stage.
   useEffect(() => {
     if (!live) return;
     const onKey = (e: KeyboardEvent) => {
       const t = e.target as HTMLElement;
       if (e.metaKey || e.ctrlKey || e.altKey) return;
       if (!(t === document.body || t.closest(".spatial-stage"))) return;
-      const step = reduced ? 0.4 : 0.26;
+      const lim = limits(mode);
       const o = bus.orbit;
       if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
         const dir = e.key === "ArrowLeft" ? 1 : -1;
-        if (mode === "overview") o.az += dir * step;
-        else o.dAz = clamp(o.dAz + dir * step * 0.5, -ORBIT.focusAz, ORBIT.focusAz);
-      } else if ((e.key === "ArrowUp" || e.key === "ArrowDown") && mode === "overview") {
-        o.pol = clamp(o.pol + (e.key === "ArrowUp" ? 0.08 : -0.08), ORBIT.minPol, ORBIT.maxPol);
+        o.dAz = clamp(o.dAz + dir * lim.az * 0.5, -lim.az, lim.az);
+      } else if (e.key === "ArrowUp" || e.key === "ArrowDown") {
+        const dir = e.key === "ArrowUp" ? 1 : -1;
+        o.dPol = clamp(o.dPol + dir * lim.pol * 0.5, -lim.pol, lim.pol);
       } else return;
       e.preventDefault();
       bus.invalidate();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [bus, live, mode, reduced]);
+  }, [bus, live, mode]);
 
-  // Drag to orbit (with momentum). Starts only on the canvas itself.
+  // Drag to shift perspective (bounded, with momentum). Starts only on the canvas.
   const drag = useRef<{ id: number; x: number; y: number; t: number; touch: boolean } | null>(null);
   const onPointerDown = (e: ReactPointerEvent<HTMLDivElement>) => {
     if (!live || !(e.target instanceof HTMLCanvasElement)) return;
@@ -122,23 +155,17 @@ export function SpatialStage({
       bus.dragging = true;
       rootRef.current?.setAttribute("data-dragging", "");
     }
-    const k = d.touch ? 0.0085 : 0.0062;
+    const k = d.touch ? 0.006 : 0.0042;
     const o = bus.orbit;
+    const lim = limits(mode);
     const dAz = -dx * k;
     const dPol = -dy * k * 0.6;
-    if (mode === "overview") {
-      o.az += dAz;
-      o.pol = clamp(o.pol + dPol, ORBIT.minPol, ORBIT.maxPol);
-    } else {
-      // Look around a destination / object, with increasing resistance.
-      const lim = mode === "focus" ? ORBIT.focusAz : ORBIT.inspectAz;
-      const plim = mode === "focus" ? ORBIT.focusPol : ORBIT.inspectPol;
-      o.dAz = clamp(o.dAz + dAz * (1 - Math.abs(o.dAz) / lim), -lim, lim);
-      o.dPol = clamp(o.dPol + dPol * 0.6 * (1 - Math.abs(o.dPol) / plim), -plim, plim);
-    }
+    // Increasing resistance toward the bounds keeps the composition intact.
+    o.dAz = clamp(o.dAz + dAz * (1 - Math.abs(o.dAz) / lim.az), -lim.az, lim.az);
+    o.dPol = clamp(o.dPol + dPol * (1 - Math.abs(o.dPol) / lim.pol), -lim.pol, lim.pol);
     // Smoothed angular velocity carried into momentum on release.
     o.vAz = o.vAz * 0.6 + (dAz / dt) * 0.4;
-    o.vPol = mode === "overview" ? o.vPol * 0.6 + (dPol / dt) * 0.4 : 0;
+    o.vPol = o.vPol * 0.6 + (dPol / dt) * 0.4;
     bus.invalidate();
   };
   const endDrag = () => {
@@ -155,10 +182,9 @@ export function SpatialStage({
   };
 
   const register =
-    (key: string, position: [number, number, number] | null, normal?: [number, number, number]) =>
-    (el: HTMLElement | null) => {
+    (key: string, position: Vec3 | null, track?: string) => (el: HTMLElement | null) => {
       if (!el || !position) return;
-      bus.anchors.set(key, { el, position, normal });
+      bus.anchors.set(key, { el, position, track });
       bus.invalidate();
       return () => {
         bus.anchors.delete(key);
@@ -166,6 +192,7 @@ export function SpatialStage({
     };
 
   const showFallback = webgl === false || failed;
+  const tiles = heroLayouts[wide ? "wide" : "narrow"].tiles;
 
   return (
     <div
@@ -204,38 +231,44 @@ export function SpatialStage({
       )}
 
       {showFallback ? (
-        <StaticWorld />
+        <StaticComposition />
       ) : (
         <div className="pointer-events-none absolute inset-0 overflow-hidden">
-          {/* Destination labels: OVERVIEW only */}
-          {areas.map((area) => {
-            // Labels dim when the exhibit is seen from behind (it faces its viewpoint).
-            const yaw = destinationYaw(area.id);
-            const shown = live && mode === "overview";
-            return (
-              <button
-                key={area.id}
-                type="button"
-                ref={register(`dest:${area.id}`, destinationLabelPosition(area.id), [Math.sin(yaw), 0, Math.cos(yaw)])}
-                data-key={`dest:${area.id}`}
-                data-shown={shown || undefined}
-                inert={!shown}
-                className="dest-label"
-                onClick={() => openArea(area.id)}
-                onPointerEnter={() => setPreview(area.id)}
-                onPointerLeave={() => setPreview(null)}
-              >
-                <span className="label-index" aria-hidden="true">
-                  {String(areas.indexOf(area) + 1).padStart(2, "0")}
-                </span>
-                <span className="text-left">
-                  <span className="block text-[15px] font-medium text-ink">{area.title}</span>
-                  <span className="dest-blurb hidden text-[12.5px] text-ink-soft lg:block">{area.blurb}</span>
-                </span>
-              </button>
-            );
-          })}
-          {/* Object labels: that destination's FOCUS state only */}
+          {/* Glass tile labels: the homepage composition only */}
+          <nav aria-label="Explore by area">
+            <ul>
+              {areas.map((area) => {
+                const shown = live && mode === "overview";
+                const hover = (on: boolean) => {
+                  bus.hover = on ? `tile:${area.id}` : null;
+                  setPreview(on ? area.id : null);
+                  bus.invalidate();
+                };
+                return (
+                  <li key={area.id}>
+                    <button
+                      type="button"
+                      ref={register(`dest:${area.id}`, tiles[area.id].position, `tile:${area.id}`)}
+                      data-key={`dest:${area.id}`}
+                      data-shown={shown || undefined}
+                      inert={!shown}
+                      className="tile-label"
+                      onClick={() => openArea(area.id)}
+                      onPointerEnter={() => hover(true)}
+                      onPointerLeave={() => hover(false)}
+                      onFocus={() => hover(true)}
+                      onBlur={() => hover(false)}
+                    >
+                      <Icon name={area.icon} className="tile-icon" />
+                      <span className="tile-title">{area.title}</span>
+                      <span className="sr-only">: {area.blurb}</span>
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          </nav>
+          {/* Object labels: that area's FOCUS state only */}
           {areas.flatMap((area) =>
             area.items.map((item, i) => {
               const shown = live && mode === "focus" && route.area === area.id;
@@ -253,7 +286,7 @@ export function SpatialStage({
                   data-shown={shown || undefined}
                   inert={!shown}
                   className="item-label"
-                  style={{ transitionDelay: shown ? `${450 + i * 80}ms` : "0ms" }}
+                  style={{ transitionDelay: shown ? `${650 + i * 80}ms` : "0ms" }}
                   onClick={() => openItem(area.id, item.id)}
                   onPointerEnter={() => hover(true)}
                   onPointerLeave={() => hover(false)}
@@ -274,46 +307,35 @@ export function SpatialStage({
 }
 
 /**
- * No-WebGL fallback: the real photograph with the four destinations as plain
- * buttons. Focus and inspection still work through the same HTML overlays.
+ * No-WebGL fallback: the same composition in HTML and CSS (the portrait and
+ * the glass tiles as plain buttons). Focus and inspection still work through
+ * the same HTML overlays.
  */
-function StaticWorld() {
+function StaticComposition() {
   return (
-    <div className="static-world absolute inset-0">
-      <div className="relative mx-auto h-full w-full max-w-[40rem]">
-        <div className="absolute inset-x-[20%] top-[14%] bottom-[24%]">
-          <Image
-            src={portrait.cutout}
-            alt={portrait.alt}
-            fill
-            priority
-            unoptimized
-            sizes="40vw"
-            className="object-contain"
-          />
-        </div>
-        <ul
-          className="absolute inset-x-4 bottom-[5%] grid grid-cols-2 gap-2 sm:grid-cols-4"
-          aria-label="Destinations"
-        >
+    <div className="static-world absolute inset-0 overflow-hidden">
+      <div className="static-portrait">
+        <Image src={portrait.cutout} alt={portrait.alt} fill priority unoptimized sizes="60vh" className="object-contain" />
+      </div>
+      <nav aria-label="Explore by area">
+        <ul>
           {areas.map((a) => (
             <li key={a.id}>
               <button
                 type="button"
                 data-key={`dest:${a.id}`}
-                className="dest-label static w-full"
+                data-area={a.id}
+                className="tile-label is-static"
                 onClick={() => openArea(a.id)}
               >
-                <Icon name={a.icon} size={18} />
-                <span className="text-left">
-                  <span className="block text-[15px] font-medium text-ink">{a.title}</span>
-                  <span className="block text-[12.5px] text-ink-soft">{a.blurb}</span>
-                </span>
+                <Icon name={a.icon} className="tile-icon" />
+                <span className="tile-title">{a.title}</span>
+                <span className="sr-only">: {a.blurb}</span>
               </button>
             </li>
           ))}
         </ul>
-      </div>
+      </nav>
     </div>
   );
 }

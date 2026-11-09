@@ -3,6 +3,7 @@
 import { useFrame } from "@react-three/fiber";
 import { useMemo } from "react";
 import * as THREE from "three";
+import type { RibbonShape } from "./world";
 
 /**
  * A soft iridescent band that orbits the subject. It passes in front of and
@@ -31,7 +32,7 @@ const fragment = /* glsl */ `
 
   // Pastel iridescence: lavender, ice blue, blush, white.
   vec3 iris(float x) {
-    return vec3(0.84, 0.82, 0.93) + vec3(0.12, 0.1, 0.06) * cos(6.2831 * (x + vec3(0.0, 0.33, 0.67)));
+    return vec3(0.86, 0.82, 0.93) + vec3(0.12, 0.13, 0.07) * cos(6.2831 * (x + vec3(0.0, 0.33, 0.67)));
   }
 
   void main() {
@@ -49,24 +50,16 @@ const fragment = /* glsl */ `
 
     // Taper the ends of the band (they meet behind the subject).
     float ends = smoothstep(0.0, 0.12, vUv.x) * smoothstep(1.0, 0.88, vUv.x);
-    float a = body * ends * (0.22 + 0.35 * fres + streak * 0.35) * uOpacity;
+    float a = body * ends * (0.34 + 0.4 * fres + streak * 0.4) * uOpacity;
     gl_FragColor = vec4(col, a);
   }
 `;
 
-interface RibbonShape {
-  rx: number;
-  rz: number;
-  center: [number, number, number];
-  tilt: [number, number, number];
-  width: number;
-}
-
 function buildRibbon({ rx, rz, center: c, tilt: t, width: w }: RibbonShape, segments = 360) {
-  const tilt = new THREE.Euler(...t);
+  const tilt = new THREE.Euler(t[0], t[1], t[2]);
   const m = new THREE.Matrix4().makeRotationFromEuler(tilt);
   const planeNormal = new THREE.Vector3(0, 1, 0).applyMatrix4(m).normalize();
-  const center = new THREE.Vector3(...c);
+  const center = new THREE.Vector3(c[0], c[1], c[2]);
 
   const positions: number[] = [];
   const normals: number[] = [];
@@ -121,27 +114,18 @@ function buildRibbon({ rx, rz, center: c, tilt: t, width: w }: RibbonShape, segm
   return g;
 }
 
-const defaultShape: RibbonShape = {
-  rx: 0.95,
-  rz: 0.72,
-  center: [0, 0.98, 0.05],
-  tilt: [0.32, 0, 0.28],
-  width: 0.13,
-};
-
 export function Ribbon({
   reduced,
-  opacity = 1,
-  shape = defaultShape,
+  opacity,
+  shape,
 }: {
   reduced: boolean;
-  opacity?: number;
-  shape?: RibbonShape;
+  /** Mutable uniform, written by the parent each frame. */
+  opacity: { value: number };
+  shape: RibbonShape;
 }) {
   const geometry = useMemo(() => buildRibbon(shape), [shape]);
-  const uniforms = useMemo(() => ({ uTime: { value: 0 }, uOpacity: { value: opacity } }), [
-    opacity,
-  ]);
+  const uniforms = useMemo(() => ({ uTime: { value: 0 }, uOpacity: opacity }), [opacity]);
 
   useFrame((_, dt) => {
     if (!reduced) uniforms.uTime.value += dt;
